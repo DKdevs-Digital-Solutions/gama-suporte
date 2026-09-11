@@ -4,7 +4,7 @@
 // Exemplos:
 //   node scripts/gerar-link.js --cnpj 12345678000199 --numnota 123456 --min 30
 //   node scripts/gerar-link.js --codcli 4521 --numped 987654 --min 15 --assunto 32
-require('dotenv').config();
+require('./lib/loadEnv').loadEnv();
 
 function parseArgs(argv) {
   const out = {};
