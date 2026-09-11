@@ -1,0 +1,20 @@
+{
+  "name": "blip-cs-checkout",
+  "version": "1.0.0",
+  "description": "Checkout mobile para abertura de chamados CS (Gama/GSync) via link enviado pelo Blip",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "gerar-link": "node scripts/gerar-link.js"
+  },
+  "dependencies": {
+    "next": "^15.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
