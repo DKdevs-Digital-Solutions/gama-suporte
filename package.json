@@ -1,5 +1,5 @@
 {
-  "name": "blip-cs-checkout",
+  "name": "gama-suporte",
   "version": "1.0.0",
   "description": "Checkout mobile para abertura de chamados CS (Gama/GSync) via link enviado pelo Blip",
   "private": true,
