@@ -30,6 +30,51 @@ mandar pro cliente, algo como `https://.../c/<token>`.
 Parâmetros aceitos: `--cnpj` ou `--codcli`, `--numnota` ou `--numped`, `--min` (expiração em
 minutos), `--assunto` (id de `/assuntos`; default `32` = "PREÇO ERRADO", usado no teste inicial).
 
+## Integração com o fluxo da Blip (ação "Enviar Requisição HTTP")
+
+Quem gera o valor pra preencher a URL é o próprio `POST /api/links` (já pronto, seção acima). Dentro
+do Blip Builder, quem faz chamada de rede é a ação **"Enviar Requisição HTTP" / "Send Request"** -
+o **Execute Script** não tem acesso à internet, só serve pra manipular texto/variáveis, então não dá
+pra chamar a API de dentro dele. Configure a ação HTTP assim, depois que o fluxo já tiver
+identificado o cliente e a nota (via `/identificar-pedido` ou `/ultimas-notas`, seguindo o fluxo
+descrito na documentação da API):
+
+**Método:** `POST`
+**URL:** `https://<seu-worker>.workers.dev/api/links` (troque pelo domínio real do deploy)
+
+**Headers:**
+```
+Content-Type: application/json
+X-Internal-Key: <o mesmo valor de INTERNAL_API_KEY configurado no Cloudflare>
+```
+
+**Corpo (JSON)** - troque pelas variáveis de contexto que o fluxo já coletou (só um de cada par é
+obrigatório: `cnpj` ou `codcli`; `numnota` ou `numped`):
+```json
+{
+  "expira_em_min": 30,
+  "cnpj": "{{context.cnpj}}",
+  "numnota": {{context.numnota}},
+  "id_assunto": 32
+}
+```
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "url": "https://.../c/<token>",
+  "expira_em": "2026-09-11T20:00:00.000Z",
+  "assunto": "PREÇO ERRADO"
+}
+```
+
+Salve o campo `url` numa variável de contexto (ex: `link_checkout`) e use ela na mensagem final,
+por exemplo: `"Segue o link pra revisar o preço divergente: {{context.link_checkout}}"`.
+
+A `X-Internal-Key` é um segredo do servidor - ela só fica dentro da configuração da ação HTTP no
+builder (nunca aparece pro cliente final).
+
 ## Como funciona o link
 
 O token na URL (`/c/<token>`) é o payload `{ cnpj|codcli, numnota|numped, id_assunto, exp, iat }`
