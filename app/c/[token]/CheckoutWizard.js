@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-
-const STEP_LABELS = ['Dados', 'Produtos', 'Descrição', 'Contato', 'Revisão'];
+import { getFluxo, rotuloEtapa } from '../../../lib/fluxosAssunto';
 
 function formatBRL(value) {
   const n = Number(value);
@@ -16,6 +15,18 @@ function onlyDigits(str) {
 
 function isValidEmail(str) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(str || '').trim());
+}
+
+function paraNumero(valor) {
+  return Number(String(valor).replace(',', '.'));
+}
+
+/** dd/mm/aaaa a partir de um input type=date (aaaa-mm-dd). */
+function formatarData(iso) {
+  if (!iso) return '';
+  const partes = String(iso).split('-');
+  if (partes.length !== 3) return String(iso);
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }
 
 async function api(path, opts) {
@@ -38,6 +49,8 @@ export default function CheckoutWizard({ token }) {
   const [data, setData] = useState(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [selected, setSelected] = useState({});
+  const [dataRecebimento, setDataRecebimento] = useState('');
+  const [credito, setCredito] = useState({ nfOrigem: '', nfDevolucao: '', valor: '' });
   const [descricaoExtra, setDescricaoExtra] = useState('');
   const [contatos, setContatos] = useState([]);
   const [contatosLoaded, setContatosLoaded] = useState(false);
@@ -63,7 +76,7 @@ export default function CheckoutWizard({ token }) {
         } else {
           // A API devolve codprod/qt/valores como string em vez de número - normaliza uma
           // vez aqui pra todo o resto do wizard poder comparar/somar com segurança.
-          const produtos = body.produtos.map((p) => ({
+          const produtos = (body.produtos || []).map((p) => ({
             ...p,
             codprod: Number(p.codprod),
             qt: Number(p.qt),
@@ -73,7 +86,7 @@ export default function CheckoutWizard({ token }) {
           setData({ ...body, produtos });
           const inicial = {};
           produtos.forEach((p) => {
-            inicial[p.codprod] = { marcado: false, preco: '' };
+            inicial[p.codprod] = { marcado: false, valor: '' };
           });
           setSelected(inicial);
         }
@@ -105,25 +118,46 @@ export default function CheckoutWizard({ token }) {
     return () => clearInterval(interval);
   }, [resultado]);
 
+  const fluxo = useMemo(() => getFluxo(data?.assunto?.id), [data]);
+  const steps = fluxo.steps;
+  const stepAtual = steps[stepIndex];
+  const configProdutos = fluxo.produtos;
+  const temEtapaProdutos = steps.some((s) => s === 'produtos_preco' || s === 'produtos_qt');
+
   const produtosSelecionados = useMemo(() => {
     return Object.keys(selected)
       .map((codprod) => ({ codprod: Number(codprod), ...selected[codprod] }))
       .filter((item) => item.marcado);
   }, [selected]);
 
-  function stepValido(idx) {
-    if (idx === 0) return true;
-    if (idx === 1) {
+  function stepValido(step) {
+    if (step === 'produtos_preco' || step === 'produtos_qt') {
       if (produtosSelecionados.length === 0) return false;
       return produtosSelecionados.every((item) => {
-        const v = Number(String(item.preco).replace(',', '.'));
-        return item.preco !== '' && !Number.isNaN(v) && v >= 0;
+        if (item.valor === '') return false;
+        const v = paraNumero(item.valor);
+        if (Number.isNaN(v) || v <= 0) return false;
+        if (step === 'produtos_qt') {
+          const prod = data.produtos.find((p) => p.codprod === item.codprod);
+          // a API recusa quantidade de ocorrência maior que a da nota
+          if (!Number.isInteger(v) || v > prod.qt) return false;
+        }
+        return true;
       });
     }
-    if (idx === 2) return true;
-    if (idx === 3) {
+    if (step === 'data') return !!dataRecebimento;
+    if (step === 'credito') {
+      return onlyDigits(credito.nfOrigem).length > 0
+        && onlyDigits(credito.nfDevolucao).length > 0
+        && !Number.isNaN(paraNumero(credito.valor)) && credito.valor !== '';
+    }
+    // sem etapa de produtos a descrição é o conteúdo do chamado, então vira obrigatória
+    if (step === 'descricao') return temEtapaProdutos ? true : descricaoExtra.trim().length > 0;
+    if (step === 'contato') {
       if (usandoNovoContato) {
-        return novoContato.nome_contato.trim().length > 0 && onlyDigits(novoContato.celular).length >= 10 && isValidEmail(novoContato.email);
+        return novoContato.nome_contato.trim().length > 0
+          && onlyDigits(novoContato.celular).length >= 10
+          && isValidEmail(novoContato.email);
       }
       return !!contatoSelecionado;
     }
@@ -131,20 +165,46 @@ export default function CheckoutWizard({ token }) {
   }
 
   function descricaoFinal() {
-    const linhas = produtosSelecionados.map((item) => {
-      const prod = data.produtos.find((p) => p.codprod === item.codprod);
-      const precoCorreto = Number(String(item.preco).replace(',', '.'));
-      return `- ${prod.produto}: cobrado a ${formatBRL(prod.valor_nf_unit)}, preço correto informado ${formatBRL(precoCorreto)} (qtd ${prod.qt}).`;
-    });
-    let base = `Cliente relata divergência de preço nos itens da nota ${data.numnota || data.numped}:\n${linhas.join('\n')}`;
-    if (descricaoExtra.trim()) {
-      base += `\n\nObservações do cliente: ${descricaoExtra.trim()}`;
+    if (!data) return '';
+    const doc = data.numnota || data.numped;
+    const linhas = [];
+
+    if (steps.includes('produtos_preco')) {
+      linhas.push(`Cliente relata divergência de preço nos itens da nota ${doc}:`);
+      produtosSelecionados.forEach((item) => {
+        const prod = data.produtos.find((p) => p.codprod === item.codprod);
+        linhas.push(`- ${prod.produto}: cobrado a ${formatBRL(prod.valor_nf_unit)}, preço correto informado ${formatBRL(paraNumero(item.valor))} (qtd ${prod.qt}).`);
+      });
+    } else if (steps.includes('produtos_qt')) {
+      linhas.push(`${data.assunto.descricao} - itens informados pelo cliente na nota ${doc}:`);
+      produtosSelecionados.forEach((item) => {
+        const prod = data.produtos.find((p) => p.codprod === item.codprod);
+        linhas.push(`- ${prod.produto}: ${paraNumero(item.valor)} de ${prod.qt} unidade(s) da nota.`);
+      });
+    } else {
+      linhas.push(`${data.assunto.descricao} - nota ${doc}.`);
+      if (fluxo.aviso) linhas.push(fluxo.aviso);
     }
-    return base;
+
+    if (steps.includes('data') && dataRecebimento) {
+      linhas.push(`Data de recebimento da mercadoria: ${formatarData(dataRecebimento)}.`);
+    }
+
+    if (steps.includes('credito')) {
+      linhas.push(`Nota fiscal de origem: ${credito.nfOrigem}.`);
+      linhas.push(`Nota fiscal de devolução: ${credito.nfDevolucao}.`);
+      linhas.push(`Valor do crédito consultado: ${formatBRL(paraNumero(credito.valor))}.`);
+    }
+
+    let texto = linhas.join('\n');
+    if (descricaoExtra.trim()) {
+      texto += `\n\nObservações do cliente: ${descricaoExtra.trim()}`;
+    }
+    return texto;
   }
 
   // Busca a lista de contatos do cliente uma única vez (cache em `contatos`); usada
-  // pra localizar o contato pelo e-mail que a pessoa informar na etapa 4.
+  // pra localizar o contato pelo e-mail que a pessoa informar.
   async function garantirContatosCarregados() {
     if (contatosLoaded) return contatos;
     try {
@@ -160,9 +220,9 @@ export default function CheckoutWizard({ token }) {
   }
 
   function goNext() {
-    if (stepIndex === STEP_LABELS.length - 1) return submit();
-    if (!stepValido(stepIndex)) return;
-    if (stepIndex === 2) garantirContatosCarregados();
+    if (stepIndex === steps.length - 1) return submit();
+    if (!stepValido(stepAtual)) return;
+    if (steps[stepIndex + 1] === 'contato') garantirContatosCarregados();
     setStepIndex((i) => i + 1);
   }
 
@@ -184,33 +244,37 @@ export default function CheckoutWizard({ token }) {
     return body.contato.id;
   }
 
+  function montarProdutos() {
+    if (!temEtapaProdutos) return [];
+    const modo = configProdutos.modo;
+    return produtosSelecionados.map((item) => {
+      const prod = data.produtos.find((p) => p.codprod === item.codprod);
+      const informado = paraNumero(item.valor);
+      return {
+        codprod: prod.codprod,
+        produto: prod.produto,
+        qt: prod.qt,
+        valor_nf_unit: prod.valor_nf_unit,
+        quantidade_ocorrencia: modo === 'quantidade' ? informado : prod.qt,
+        valor_ocorrencia: modo === 'preco' ? informado : prod.valor_nf_unit,
+      };
+    });
+  }
+
   async function submit() {
-    if (!stepValido(3) || submitting) return;
+    if (!stepValido('contato') || submitting) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
       const contatoId = await garantirContatoId();
-      const produtosPayload = produtosSelecionados.map((item) => {
-        const prod = data.produtos.find((p) => p.codprod === item.codprod);
-        return {
-          codprod: prod.codprod,
-          produto: prod.produto,
-          qt: prod.qt,
-          valor_nf_unit: prod.valor_nf_unit,
-          quantidade_ocorrencia: prod.qt,
-          valor_ocorrencia: Number(String(item.preco).replace(',', '.')),
-        };
-      });
-
       const body = await api(`/api/checkout/${token}/submit`, {
         method: 'POST',
         body: JSON.stringify({
           descricao_chamado: descricaoFinal(),
-          produtos: produtosPayload,
+          produtos: montarProdutos(),
           contatos: [Number(contatoId)],
         }),
       });
-
       setResultado(body.chamado);
     } catch (err) {
       setSubmitError(err.message);
@@ -220,8 +284,7 @@ export default function CheckoutWizard({ token }) {
   }
 
   const mostrarTimeline = !loading && !error && !resultado;
-  const mostrarFooter = mostrarTimeline;
-  const isLast = stepIndex === STEP_LABELS.length - 1;
+  const isLast = stepIndex === steps.length - 1;
 
   return (
     <div className="app-shell">
@@ -232,7 +295,7 @@ export default function CheckoutWizard({ token }) {
       {mostrarTimeline && (
         <>
           <div className="timeline">
-            {STEP_LABELS.map((_, i) => (
+            {steps.map((_, i) => (
               <div
                 key={i}
                 className={'timeline-step' + (i < stepIndex ? ' done' : i === stepIndex ? ' current' : '')}
@@ -240,7 +303,7 @@ export default function CheckoutWizard({ token }) {
             ))}
           </div>
           <div className="timeline-label">
-            Etapa {stepIndex + 1} de {STEP_LABELS.length} - {STEP_LABELS[stepIndex]}
+            Etapa {stepIndex + 1} de {steps.length} - {rotuloEtapa(stepAtual)}
           </div>
         </>
       )}
@@ -278,18 +341,35 @@ export default function CheckoutWizard({ token }) {
 
         {!loading && !error && !resultado && data && (
           <>
-            {stepIndex === 0 && <PassoDados data={data} />}
-            {stepIndex === 1 && (
-              <PassoProdutos data={data} selected={selected} setSelected={setSelected} />
+            {stepAtual === 'dados' && <PassoDados data={data} aviso={fluxo.aviso} />}
+
+            {(stepAtual === 'produtos_preco' || stepAtual === 'produtos_qt') && (
+              <PassoProdutos
+                data={data}
+                config={configProdutos}
+                selected={selected}
+                setSelected={setSelected}
+              />
             )}
-            {stepIndex === 2 && (
+
+            {stepAtual === 'data' && (
+              <PassoData valor={dataRecebimento} setValor={setDataRecebimento} />
+            )}
+
+            {stepAtual === 'credito' && (
+              <PassoCredito credito={credito} setCredito={setCredito} />
+            )}
+
+            {stepAtual === 'descricao' && (
               <PassoDescricao
                 descricaoExtra={descricaoExtra}
                 setDescricaoExtra={setDescricaoExtra}
+                obrigatoria={!temEtapaProdutos}
                 preview={descricaoFinal()}
               />
             )}
-            {stepIndex === 3 && (
+
+            {stepAtual === 'contato' && (
               <PassoContato
                 contatos={contatos}
                 garantirContatosCarregados={garantirContatosCarregados}
@@ -301,10 +381,15 @@ export default function CheckoutWizard({ token }) {
                 setNovoContato={setNovoContato}
               />
             )}
-            {stepIndex === 4 && (
+
+            {stepAtual === 'revisao' && (
               <PassoRevisao
                 data={data}
+                steps={steps}
+                config={configProdutos}
                 produtosSelecionados={produtosSelecionados}
+                dataRecebimento={dataRecebimento}
+                credito={credito}
                 contatos={contatos}
                 contatoSelecionado={contatoSelecionado}
                 usandoNovoContato={usandoNovoContato}
@@ -316,7 +401,7 @@ export default function CheckoutWizard({ token }) {
         )}
       </main>
 
-      {mostrarFooter && (
+      {mostrarTimeline && (
         <footer className="footer">
           {stepIndex > 0 && (
             <button type="button" className="btn btn-ghost" onClick={goBack}>Voltar</button>
@@ -324,7 +409,7 @@ export default function CheckoutWizard({ token }) {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={submitting || !stepValido(stepIndex)}
+            disabled={submitting || !stepValido(stepAtual)}
             onClick={goNext}
           >
             {isLast ? (submitting ? 'Enviando...' : 'Enviar chamado') : 'Continuar'}
@@ -344,7 +429,7 @@ function Row({ label, value }) {
   );
 }
 
-function PassoDados({ data }) {
+function PassoDados({ data, aviso }) {
   return (
     <div className="screen">
       <div className="badge">{data.assunto.descricao}</div>
@@ -356,15 +441,17 @@ function PassoDados({ data }) {
         <Row label="Data do pedido" value={data.data_pedido || '-'} />
         <Row label="Valor total" value={formatBRL(data.valor_total)} />
       </div>
+      {aviso && <div className="alert alert-success">{aviso}</div>}
     </div>
   );
 }
 
 const PRODUTOS_POR_PAGINA = 8;
 
-function PassoProdutos({ data, selected, setSelected }) {
+function PassoProdutos({ data, config, selected, setSelected }) {
   const [busca, setBusca] = useState('');
   const [pagina, setPagina] = useState(0);
+  const ehQuantidade = config.modo === 'quantidade';
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -386,8 +473,8 @@ function PassoProdutos({ data, selected, setSelected }) {
 
   return (
     <div className="screen">
-      <h1>Quais produtos vieram com preço errado?</h1>
-      <p className="muted">Marque os itens divergentes e informe o preço correto de cada um.</p>
+      <h1>{config.titulo}</h1>
+      <p className="muted">{config.ajuda}</p>
 
       <input
         type="text"
@@ -401,11 +488,11 @@ function PassoProdutos({ data, selected, setSelected }) {
       )}
 
       {itensPagina.length === 0 && (
-        <p className="muted">Nenhum produto encontrado para "{busca}".</p>
+        <p className="muted">Nenhum produto encontrado para &quot;{busca}&quot;.</p>
       )}
 
       {itensPagina.map((p) => {
-        const sel = selected[p.codprod] || { marcado: false, preco: '' };
+        const sel = selected[p.codprod] || { marcado: false, valor: '' };
         return (
           <div className="product-item" key={p.codprod}>
             <div className="product-head">
@@ -423,20 +510,24 @@ function PassoProdutos({ data, selected, setSelected }) {
               </div>
             </div>
             <div className={'product-price-input' + (sel.marcado ? ' visible' : '')}>
-              <label>Preço correto (unitário):</label>
+              <label>{config.rotuloCampo}</label>
               <input
                 type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                placeholder="0,00"
-                value={sel.preco}
+                inputMode={ehQuantidade ? 'numeric' : 'decimal'}
+                step={ehQuantidade ? '1' : '0.01'}
+                min={ehQuantidade ? '1' : '0'}
+                max={ehQuantidade ? String(p.qt) : undefined}
+                placeholder={ehQuantidade ? '0' : '0,00'}
+                value={sel.valor}
                 onChange={(e) => setSelected((prev) => ({
                   ...prev,
-                  [p.codprod]: { ...prev[p.codprod], preco: e.target.value },
+                  [p.codprod]: { ...prev[p.codprod], valor: e.target.value },
                 }))}
               />
             </div>
+            {ehQuantidade && sel.marcado && sel.valor !== '' && paraNumero(sel.valor) > p.qt && (
+              <div className="alert alert-danger">A nota tem só {p.qt} unidade(s) deste item.</div>
+            )}
           </div>
         );
       })}
@@ -466,14 +557,66 @@ function PassoProdutos({ data, selected, setSelected }) {
   );
 }
 
-function PassoDescricao({ descricaoExtra, setDescricaoExtra, preview }) {
+function PassoData({ valor, setValor }) {
   return (
     <div className="screen">
-      <h1>Quer adicionar algum detalhe?</h1>
-      <p className="muted">Isso é opcional - já vamos enviar um resumo com os produtos e preços que você informou.</p>
-      <label className="field-label">Observações (opcional)</label>
+      <h1>Quando a mercadoria foi recebida?</h1>
+      <p className="muted">Informe a data em que a entrega chegou.</p>
+      <label className="field-label">Data de recebimento</label>
+      <input type="date" value={valor} onChange={(e) => setValor(e.target.value)} />
+    </div>
+  );
+}
+
+function PassoCredito({ credito, setCredito }) {
+  return (
+    <div className="screen">
+      <h1>Dados do crédito</h1>
+      <p className="muted">Informe as notas envolvidas e o valor que deseja consultar.</p>
+      <div className="card">
+        <label className="field-label">Nota fiscal de origem</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="Número da NF de origem"
+          value={credito.nfOrigem}
+          onChange={(e) => setCredito((prev) => ({ ...prev, nfOrigem: e.target.value }))}
+        />
+        <label className="field-label">Nota fiscal de devolução</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="Número da NF de devolução"
+          value={credito.nfDevolucao}
+          onChange={(e) => setCredito((prev) => ({ ...prev, nfDevolucao: e.target.value }))}
+        />
+        <label className="field-label">Valor do crédito</label>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          value={credito.valor}
+          onChange={(e) => setCredito((prev) => ({ ...prev, valor: e.target.value }))}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PassoDescricao({ descricaoExtra, setDescricaoExtra, obrigatoria, preview }) {
+  return (
+    <div className="screen">
+      <h1>{obrigatoria ? 'Descreva o que aconteceu' : 'Quer adicionar algum detalhe?'}</h1>
+      <p className="muted">
+        {obrigatoria
+          ? 'Conte o que houve para a nossa equipe entender o seu caso.'
+          : 'Isso é opcional - já vamos enviar um resumo com os dados que você informou.'}
+      </p>
+      <label className="field-label">{obrigatoria ? 'Descrição' : 'Observações (opcional)'}</label>
       <textarea
-        placeholder="Ex: o preço combinado com o vendedor era diferente do cobrado na nota..."
+        placeholder="Descreva aqui o que aconteceu..."
         value={descricaoExtra}
         onChange={(e) => setDescricaoExtra(e.target.value)}
       />
@@ -606,11 +749,15 @@ function PassoContato({
 }
 
 function PassoRevisao({
-  data, produtosSelecionados, contatos, contatoSelecionado, usandoNovoContato, novoContato, submitError,
+  data, steps, config, produtosSelecionados, dataRecebimento, credito,
+  contatos, contatoSelecionado, usandoNovoContato, novoContato, submitError,
 }) {
   const contatoLabel = usandoNovoContato
     ? `${novoContato.nome_contato} (novo contato)`
     : (contatos.find((c) => c.id === contatoSelecionado)?.nome_contato || '-');
+
+  const temProdutos = produtosSelecionados.length > 0;
+  const ehQuantidade = config && config.modo === 'quantidade';
 
   return (
     <div className="screen">
@@ -619,13 +766,31 @@ function PassoRevisao({
         <Row label="Empresa" value={data.empresa} />
         <Row label="Assunto" value={data.assunto.descricao} />
         <Row label="Contato" value={contatoLabel} />
+        {steps.includes('data') && dataRecebimento && (
+          <Row label="Recebido em" value={formatarData(dataRecebimento)} />
+        )}
       </div>
-      <div className="card">
-        {produtosSelecionados.map((item) => {
-          const prod = data.produtos.find((p) => p.codprod === item.codprod);
-          return <Row key={item.codprod} label={prod.produto} value={formatBRL(item.preco)} />;
-        })}
-      </div>
+
+      {steps.includes('credito') && (
+        <div className="card">
+          <Row label="NF de origem" value={credito.nfOrigem} />
+          <Row label="NF de devolução" value={credito.nfDevolucao} />
+          <Row label="Valor" value={formatBRL(paraNumero(credito.valor))} />
+        </div>
+      )}
+
+      {temProdutos && (
+        <div className="card">
+          {produtosSelecionados.map((item) => {
+            const prod = data.produtos.find((p) => p.codprod === item.codprod);
+            const valor = ehQuantidade
+              ? `${paraNumero(item.valor)} un.`
+              : formatBRL(paraNumero(item.valor));
+            return <Row key={item.codprod} label={prod.produto} value={valor} />;
+          })}
+        </div>
+      )}
+
       {submitError && <div className="alert alert-danger">{submitError}</div>}
     </div>
   );
