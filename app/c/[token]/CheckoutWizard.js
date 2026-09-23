@@ -62,6 +62,7 @@ export default function CheckoutWizard({ token }) {
   const [resultado, setResultado] = useState(null);
   const [jaConcluido, setJaConcluido] = useState(false);
   const [fecharEmSegundos, setFecharEmSegundos] = useState(30);
+  const [assuntoEscolhido, setAssuntoEscolhido] = useState(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -118,9 +119,24 @@ export default function CheckoutWizard({ token }) {
     return () => clearInterval(interval);
   }, [resultado]);
 
-  const fluxo = useMemo(() => getFluxo(data?.assunto?.id), [data]);
-  const steps = fluxo.steps;
+  // Link com grupo (ex: "devolucao") pergunta o subtipo aqui no checkout; sem grupo, o
+  // assunto já vem fechado no token.
+  const grupo = data?.grupo || null;
+  const assuntoEfetivo = assuntoEscolhido || data?.assunto || null;
+  const fluxo = useMemo(
+    () => getFluxo(assuntoEfetivo?.id ?? grupo?.opcoes?.[0]?.id),
+    [assuntoEfetivo, grupo],
+  );
+  const steps = useMemo(
+    () => (grupo ? ['dados', 'assunto', ...fluxo.steps.slice(1)] : fluxo.steps),
+    [grupo, fluxo],
+  );
   const stepAtual = steps[stepIndex];
+
+  // Trocar o assunto pode encurtar a lista de etapas (integral não tem produtos, por exemplo).
+  useEffect(() => {
+    setStepIndex((i) => Math.min(i, steps.length - 1));
+  }, [steps]);
   const configProdutos = fluxo.produtos;
   const temEtapaProdutos = steps.some((s) => s === 'produtos_preco' || s === 'produtos_qt');
 
@@ -131,6 +147,7 @@ export default function CheckoutWizard({ token }) {
   }, [selected]);
 
   function stepValido(step) {
+    if (step === 'assunto') return !!assuntoEscolhido;
     if (step === 'produtos_preco' || step === 'produtos_qt') {
       if (produtosSelecionados.length === 0) return false;
       return produtosSelecionados.every((item) => {
@@ -176,13 +193,13 @@ export default function CheckoutWizard({ token }) {
         linhas.push(`- ${prod.produto}: cobrado a ${formatBRL(prod.valor_nf_unit)}, preço correto informado ${formatBRL(paraNumero(item.valor))} (qtd ${prod.qt}).`);
       });
     } else if (steps.includes('produtos_qt')) {
-      linhas.push(`${data.assunto.descricao} - itens informados pelo cliente na nota ${doc}:`);
+      linhas.push(`${assuntoEfetivo.descricao} - itens informados pelo cliente na nota ${doc}:`);
       produtosSelecionados.forEach((item) => {
         const prod = data.produtos.find((p) => p.codprod === item.codprod);
         linhas.push(`- ${prod.produto}: ${paraNumero(item.valor)} de ${prod.qt} unidade(s) da nota.`);
       });
     } else {
-      linhas.push(`${data.assunto.descricao} - nota ${doc}.`);
+      linhas.push(`${assuntoEfetivo.descricao} - nota ${doc}.`);
       if (fluxo.aviso) linhas.push(fluxo.aviso);
     }
 
@@ -273,6 +290,7 @@ export default function CheckoutWizard({ token }) {
           descricao_chamado: descricaoFinal(),
           produtos: montarProdutos(),
           contatos: [Number(contatoId)],
+          id_assunto: assuntoEfetivo ? assuntoEfetivo.id : undefined,
         }),
       });
       setResultado(body.chamado);
@@ -341,7 +359,22 @@ export default function CheckoutWizard({ token }) {
 
         {!loading && !error && !resultado && data && (
           <>
-            {stepAtual === 'dados' && <PassoDados data={data} aviso={fluxo.aviso} />}
+            {stepAtual === 'dados' && (
+              <PassoDados
+                data={data}
+                etiqueta={assuntoEfetivo ? assuntoEfetivo.descricao : grupo?.label}
+                aviso={grupo ? null : fluxo.aviso}
+              />
+            )}
+
+            {stepAtual === 'assunto' && (
+              <PassoAssunto
+                grupo={grupo}
+                escolhido={assuntoEscolhido}
+                setEscolhido={setAssuntoEscolhido}
+                aviso={fluxo.aviso}
+              />
+            )}
 
             {(stepAtual === 'produtos_preco' || stepAtual === 'produtos_qt') && (
               <PassoProdutos
@@ -385,6 +418,7 @@ export default function CheckoutWizard({ token }) {
             {stepAtual === 'revisao' && (
               <PassoRevisao
                 data={data}
+                assunto={assuntoEfetivo}
                 steps={steps}
                 config={configProdutos}
                 produtosSelecionados={produtosSelecionados}
@@ -429,10 +463,10 @@ function Row({ label, value }) {
   );
 }
 
-function PassoDados({ data, aviso }) {
+function PassoDados({ data, etiqueta, aviso }) {
   return (
     <div className="screen">
-      <div className="badge">{data.assunto.descricao}</div>
+      <div className="badge">{etiqueta}</div>
       <h1>{data.empresa}</h1>
       <p className="muted">Confira os dados do atendimento antes de continuar.</p>
       <div className="card">
@@ -442,6 +476,32 @@ function PassoDados({ data, aviso }) {
         <Row label="Valor total" value={formatBRL(data.valor_total)} />
       </div>
       {aviso && <div className="alert alert-success">{aviso}</div>}
+    </div>
+  );
+}
+
+function PassoAssunto({ grupo, escolhido, setEscolhido, aviso }) {
+  return (
+    <div className="screen">
+      <h1>{grupo.pergunta}</h1>
+      <p className="muted">Escolha a opção que descreve o seu caso.</p>
+
+      {grupo.opcoes.map((opcao) => (
+        <label className="contact-option" key={opcao.id}>
+          <input
+            type="radio"
+            name="assunto"
+            checked={escolhido?.id === opcao.id}
+            onChange={() => setEscolhido({ id: opcao.id, descricao: opcao.descricao })}
+          />
+          <div>
+            <div className="name">{opcao.titulo}</div>
+            {opcao.ajuda && <div className="meta">{opcao.ajuda}</div>}
+          </div>
+        </label>
+      ))}
+
+      {escolhido && aviso && <div className="alert alert-success">{aviso}</div>}
     </div>
   );
 }
@@ -749,7 +809,7 @@ function PassoContato({
 }
 
 function PassoRevisao({
-  data, steps, config, produtosSelecionados, dataRecebimento, credito,
+  data, assunto, steps, config, produtosSelecionados, dataRecebimento, credito,
   contatos, contatoSelecionado, usandoNovoContato, novoContato, submitError,
 }) {
   const contatoLabel = usandoNovoContato
@@ -764,7 +824,7 @@ function PassoRevisao({
       <h1>Revise antes de enviar</h1>
       <div className="card">
         <Row label="Empresa" value={data.empresa} />
-        <Row label="Assunto" value={data.assunto.descricao} />
+        <Row label="Assunto" value={assunto ? assunto.descricao : '-'} />
         <Row label="Contato" value={contatoLabel} />
         {steps.includes('data') && dataRecebimento && (
           <Row label="Recebido em" value={formatarData(dataRecebimento)} />

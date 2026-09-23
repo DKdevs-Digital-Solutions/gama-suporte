@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { loadLink, identificacao } from '../../../../lib/loadLink';
 import { gsync } from '../../../../lib/gsyncClient';
 import * as linkStore from '../../../../lib/linkStore';
+import { resolveGrupo } from '../../../../lib/assuntos';
 import { withErrorHandling } from '../../../../lib/apiHandler';
 
 // GET /api/checkout/:token - dados iniciais pra montar a tela de checkout.
@@ -29,7 +30,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
     success: true,
     jaConcluido: false,
     expira_em: new Date(link.exp).toISOString(),
-    assunto: { id: link.id_assunto, descricao: link.assunto_descricao },
+    assunto: link.id_assunto ? { id: link.id_assunto, descricao: link.assunto_descricao } : null,
+    grupo: link.grupo ? resolveGrupo(link.grupo) : null,
     empresa: pedido.data.cliente_descricao,
     cnpj: pedido.data.cnpj,
     numnota: pedido.data.numnota,

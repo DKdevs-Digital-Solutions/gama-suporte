@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getConfig } from '../../../lib/config';
 import { encodeLinkToken } from '../../../lib/linkToken';
-import { resolveAssunto } from '../../../lib/assuntos';
+import { resolveAssunto, resolveGrupo, nomesDeGrupos } from '../../../lib/assuntos';
 import { withErrorHandling } from '../../../lib/apiHandler';
 
 // POST /api/token - recebe os dados do link e devolve só o token (sem montar a URL, sem
@@ -13,7 +13,7 @@ export const POST = withErrorHandling(async (request) => {
     return NextResponse.json({ mensagem: 'Chave interna ausente ou inválida.' }, { status: 401 });
   }
 
-  const { expira_em_min, cnpj, codcli, numnota, numped, id_assunto } = await request.json().catch(() => ({}));
+  const { expira_em_min, cnpj, codcli, numnota, numped, id_assunto, grupo } = await request.json().catch(() => ({}));
 
   if (!expira_em_min || Number(expira_em_min) <= 0) {
     return NextResponse.json({ mensagem: 'Informe expira_em_min (número de minutos maior que zero).' }, { status: 422 });
@@ -25,8 +25,18 @@ export const POST = withErrorHandling(async (request) => {
     return NextResponse.json({ mensagem: 'Informe numnota ou numped.' }, { status: 422 });
   }
 
-  const assunto = resolveAssunto(id_assunto);
-  if (!assunto) {
+  // Com "grupo", o próprio checkout pergunta o subtipo (ex: devolução parcial ou integral).
+  // Sem ele, o assunto vem fechado no link, como antes.
+  const grupoResolvido = grupo ? resolveGrupo(grupo) : null;
+  if (grupo && !grupoResolvido) {
+    return NextResponse.json(
+      { mensagem: `Grupo "${grupo}" não reconhecido. Use um destes: ${nomesDeGrupos().join(', ')}.` },
+      { status: 422 },
+    );
+  }
+
+  const assunto = grupoResolvido ? null : resolveAssunto(id_assunto);
+  if (!grupoResolvido && !assunto) {
     return NextResponse.json(
       { mensagem: `Assunto "${id_assunto}" não reconhecido. Use um id_assunto válido ou a descrição exata.` },
       { status: 422 },
@@ -42,8 +52,9 @@ export const POST = withErrorHandling(async (request) => {
     codcli: codcli || undefined,
     numnota: numnota || undefined,
     numped: numped || undefined,
-    id_assunto: assunto.id,
-    assunto_descricao: assunto.descricao,
+    grupo: grupoResolvido ? grupoResolvido.nome : undefined,
+    id_assunto: assunto ? assunto.id : undefined,
+    assunto_descricao: assunto ? assunto.descricao : undefined,
     iat: now,
     exp,
   });
@@ -52,6 +63,7 @@ export const POST = withErrorHandling(async (request) => {
     success: true,
     token,
     expira_em: new Date(exp).toISOString(),
-    assunto: assunto.descricao,
+    assunto: assunto ? assunto.descricao : undefined,
+    grupo: grupoResolvido ? grupoResolvido.nome : undefined,
   });
 });

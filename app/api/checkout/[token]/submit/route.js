@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { loadLink, identificacao } from '../../../../../lib/loadLink';
 import { gsync } from '../../../../../lib/gsyncClient';
 import * as linkStore from '../../../../../lib/linkStore';
+import { assuntoPermitidoNoGrupo } from '../../../../../lib/assuntos';
 import { withErrorHandling } from '../../../../../lib/apiHandler';
 
 // POST /api/checkout/:token/submit - abre o chamado de verdade. Idempotente: se o link já
@@ -15,7 +16,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
     return NextResponse.json({ success: true, jaConcluido: true, chamado: jaUsado.chamado });
   }
 
-  const { descricao_chamado, produtos, contatos } = await request.json().catch(() => ({}));
+  const { descricao_chamado, produtos, contatos, id_assunto } = await request.json().catch(() => ({}));
 
   if (!descricao_chamado || !String(descricao_chamado).trim()) {
     return NextResponse.json({ mensagem: 'Descreva o problema antes de enviar.' }, { status: 422 });
@@ -24,9 +25,19 @@ export const POST = withErrorHandling(async (request, { params }) => {
     return NextResponse.json({ mensagem: 'Selecione de 1 a 3 contatos.' }, { status: 422 });
   }
 
+  // Link com grupo: o assunto vem da escolha feita no checkout, mas só pode ser um dos
+  // permitidos pelo grupo - senão daria pra abrir chamado com qualquer assunto.
+  let idAssunto = link.id_assunto;
+  if (link.grupo) {
+    if (!assuntoPermitidoNoGrupo(link.grupo, id_assunto)) {
+      return NextResponse.json({ mensagem: 'Selecione o tipo de atendimento antes de enviar.' }, { status: 422 });
+    }
+    idAssunto = Number(id_assunto);
+  }
+
   const chamado = await gsync.abrirChamado({
     ...identificacao(link),
-    id_assunto: link.id_assunto,
+    id_assunto: idAssunto,
     descricao_chamado,
     contatos,
     origem: 'BLIP',
