@@ -482,6 +482,7 @@ function PassoDados({ data, etiqueta, aviso }) {
         <Row label="Pedido" value={data.numped ? String(data.numped) : '-'} />
         <Row label="Data do pedido" value={data.data_pedido || '-'} />
         <Row label="Valor total" value={formatBRL(data.valor_total)} />
+        {data.solicitacao_rca && <Row label="Solicitado pelo RCA" value={String(data.solicitacao_rca)} />}
       </div>
       {aviso && <div className="alert alert-success">{aviso}</div>}
     </div>

@@ -50,6 +50,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
     origem: 'BLIP',
     produtos: Array.isArray(produtos) && produtos.length ? produtos : undefined,
     anexos: Array.isArray(anexos) && anexos.length ? anexos : undefined,
+    solicitacao_rca: link.solicitacao_rca || undefined,
   });
 
   await linkStore.markUsed(token, chamado);

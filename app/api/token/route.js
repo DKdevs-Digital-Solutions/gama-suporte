@@ -13,7 +13,9 @@ export const POST = withErrorHandling(async (request) => {
     return NextResponse.json({ mensagem: 'Chave interna ausente ou inválida.' }, { status: 401 });
   }
 
-  const { expira_em_min, cnpj, codcli, numnota, numped, id_assunto, grupo } = await request.json().catch(() => ({}));
+  const {
+    expira_em_min, cnpj, codcli, numnota, numped, id_assunto, grupo, solicitacao_rca,
+  } = await request.json().catch(() => ({}));
 
   if (!expira_em_min || Number(expira_em_min) <= 0) {
     return NextResponse.json({ mensagem: 'Informe expira_em_min (número de minutos maior que zero).' }, { status: 422 });
@@ -43,6 +45,15 @@ export const POST = withErrorHandling(async (request) => {
     );
   }
 
+  // Código do RCA quando quem pede o chamado é o RCA e não o cliente (campo opcional da API).
+  let rca;
+  if (solicitacao_rca !== undefined && solicitacao_rca !== null && solicitacao_rca !== '') {
+    rca = Number(solicitacao_rca);
+    if (!Number.isInteger(rca) || rca <= 0) {
+      return NextResponse.json({ mensagem: 'solicitacao_rca deve ser o código numérico do RCA.' }, { status: 422 });
+    }
+  }
+
   const now = Date.now();
   const exp = now + Number(expira_em_min) * 60_000;
 
@@ -55,6 +66,7 @@ export const POST = withErrorHandling(async (request) => {
     grupo: grupoResolvido ? grupoResolvido.nome : undefined,
     id_assunto: assunto ? assunto.id : undefined,
     assunto_descricao: assunto ? assunto.descricao : undefined,
+    solicitacao_rca: rca,
     iat: now,
     exp,
   });
