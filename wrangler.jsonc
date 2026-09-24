@@ -24,6 +24,14 @@
 		// see https://opennext.js.org/cloudflare/howtos/image
 		"binding": "IMAGES"
 	},
+	// Config não sensível fica aqui, versionada. As credenciais (GSYNC_LOGIN, GSYNC_PASSWORD,
+	// LINK_SECRET, INTERNAL_API_KEY) são secrets criados no painel: o deploy apaga variáveis
+	// de texto criadas no painel, mas preserva os secrets.
+	"vars": {
+		"GSYNC_BASE_URL": "https://gsync.com.br",
+		// usada para montar as URLs dos anexos que o Gsync baixa
+		"PUBLIC_BASE_URL": "https://gama-suporte.servico-daniel.workers.dev"
+	},
 	"r2_buckets": [
 		{
 			// Fotos/PDFs enviados no checkout. A API do Gsync só aceita anexo por URL,
