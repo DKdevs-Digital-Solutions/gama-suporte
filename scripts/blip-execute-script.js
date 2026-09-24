@@ -15,7 +15,10 @@
 //
 // Saída: só o token (string) - o valor que vai depois de "/c/" na URL do checkout.
 
-const LINK_SECRET_HEX = 'fedaca3856e89514e4acd129ae4962ae29ddcbfb2a2af6dbd9014fa6ee51bf24';
+// Cole aqui o mesmo LINK_SECRET configurado no Cloudflare, SÓ dentro da Blip. Nunca commite o
+// valor: com ele qualquer um fabrica links válidos. (O fluxo atual usa o /api/token e não
+// precisa deste script; ele fica como alternativa para gerar o token dentro da Blip.)
+const LINK_SECRET_HEX = 'COLE_AQUI_O_LINK_SECRET';
 
 const ASSUNTOS = {
   36: 'APLICAR DESCONTO', 28: 'ATRASO DE ENTREGA', 39: 'BARRAR ENTREGA',
