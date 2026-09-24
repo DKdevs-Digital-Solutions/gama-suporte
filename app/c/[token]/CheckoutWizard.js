@@ -94,7 +94,10 @@ export default function CheckoutWizard({ token }) {
         }
       } catch (err) {
         if (cancelado) return;
-        setError(err.status === 410 ? err.message : 'Não foi possível carregar seus dados agora. Tente novamente em instantes.');
+        // 404/410/422 trazem mensagem de negócio já pronta pro cliente (link expirado, nota que
+        // não é do cliente, documento inválido); só falha de servidor/rede fica genérica.
+        const mensagemDeNegocio = [404, 410, 422].includes(err.status) && err.message;
+        setError(mensagemDeNegocio || 'Não foi possível carregar seus dados agora. Tente novamente em instantes.');
       } finally {
         if (!cancelado) setLoading(false);
       }
