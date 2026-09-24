@@ -14,7 +14,7 @@ export const POST = withErrorHandling(async (request) => {
   }
 
   const {
-    expira_em_min, cnpj, codcli, numnota, numped, id_assunto, grupo, solicitacao_rca,
+    expira_em_min, cnpj, codcli, numnota, numped, id_assunto, grupo, solicitacao_rca, whatsapp,
   } = await request.json().catch(() => ({}));
 
   if (!expira_em_min || Number(expira_em_min) <= 0) {
@@ -54,6 +54,16 @@ export const POST = withErrorHandling(async (request) => {
     }
   }
 
+  // Número de quem está falando com o bot. A API não tem campo para ele, então vai no texto do
+  // chamado; aceita com ou sem código do país, só dígitos.
+  let fone;
+  if (whatsapp) {
+    fone = String(whatsapp).replace(/\D/g, '');
+    if (fone.length < 10 || fone.length > 15) {
+      return NextResponse.json({ mensagem: 'whatsapp deve ter DDD e número (10 a 15 dígitos).' }, { status: 422 });
+    }
+  }
+
   const now = Date.now();
   const exp = now + Number(expira_em_min) * 60_000;
 
@@ -67,6 +77,7 @@ export const POST = withErrorHandling(async (request) => {
     id_assunto: assunto ? assunto.id : undefined,
     assunto_descricao: assunto ? assunto.descricao : undefined,
     solicitacao_rca: rca,
+    whatsapp: fone,
     iat: now,
     exp,
   });

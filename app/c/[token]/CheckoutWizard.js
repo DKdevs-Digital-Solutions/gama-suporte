@@ -17,6 +17,20 @@ function isValidEmail(str) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(str || '').trim());
 }
 
+/** Número sem o 55 do Brasil, no formato que a API espera no celular do contato (DDD + número). */
+function foneLocal(digitos) {
+  const d = onlyDigits(digitos);
+  return (d.length === 12 || d.length === 13) && d.startsWith('55') ? d.slice(2) : d;
+}
+
+/** (31) 99999-9999 */
+function formatarFone(digitos) {
+  const d = foneLocal(digitos);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `+${onlyDigits(digitos)}`;
+}
+
 function paraNumero(valor) {
   return Number(String(valor).replace(',', '.'));
 }
@@ -143,6 +157,9 @@ export default function CheckoutWizard({ token }) {
   }, [steps]);
   const configProdutos = fluxo.produtos;
   const temEtapaProdutos = steps.some((s) => s === 'produtos_preco' || s === 'produtos_qt');
+  // sem config própria: com produtos, o resumo deles já é o conteúdo do chamado (texto opcional);
+  // sem produtos, o texto é o próprio conteúdo (obrigatório)
+  const descricaoObrigatoria = fluxo.descricao?.obrigatoria ?? !temEtapaProdutos;
 
   const produtosSelecionados = useMemo(() => {
     return Object.keys(selected)
@@ -173,8 +190,7 @@ export default function CheckoutWizard({ token }) {
         && onlyDigits(credito.nfDevolucao).length > 0
         && !Number.isNaN(paraNumero(credito.valor)) && credito.valor !== '';
     }
-    // sem etapa de produtos a descrição é o conteúdo do chamado, então vira obrigatória
-    if (step === 'descricao') return temEtapaProdutos ? true : descricaoExtra.trim().length > 0;
+    if (step === 'descricao') return descricaoObrigatoria ? descricaoExtra.trim().length > 0 : true;
     if (step === 'contato') {
       if (usandoNovoContato) {
         return novoContato.nome_contato.trim().length > 0
@@ -203,6 +219,8 @@ export default function CheckoutWizard({ token }) {
         const prod = data.produtos.find((p) => p.codprod === item.codprod);
         linhas.push(`- ${prod.produto}: ${paraNumero(item.valor)} de ${prod.qt} unidade(s) da nota.`);
       });
+    } else if (fluxo.todosOsProdutos) {
+      linhas.push(`${assuntoEfetivo.descricao} - todos os ${data.produtos.length} itens da nota ${doc}, nas quantidades faturadas.`);
     } else {
       linhas.push(`${assuntoEfetivo.descricao} - nota ${doc}.`);
       if (fluxo.aviso) linhas.push(fluxo.aviso);
@@ -218,9 +236,15 @@ export default function CheckoutWizard({ token }) {
       linhas.push(`Valor do crédito consultado: ${formatBRL(paraNumero(credito.valor))}.`);
     }
 
+    // a API não tem campo de telefone: o número de quem abriu pelo WhatsApp vai no texto
+    if (data.whatsapp) {
+      linhas.push(`Contato via WhatsApp: ${formatarFone(data.whatsapp)}.`);
+    }
+
     let texto = linhas.join('\n');
     if (descricaoExtra.trim()) {
-      texto += `\n\nObservações do cliente: ${descricaoExtra.trim()}`;
+      const rotulo = fluxo.descricao?.rotuloNoChamado || 'Observações do cliente';
+      texto += `\n\n${rotulo}: ${descricaoExtra.trim()}`;
     }
     return texto;
   }
@@ -267,6 +291,17 @@ export default function CheckoutWizard({ token }) {
   }
 
   function montarProdutos() {
+    // devolução integral: a nota inteira, cada item na quantidade faturada
+    if (fluxo.todosOsProdutos) {
+      return data.produtos.map((prod) => ({
+        codprod: prod.codprod,
+        produto: prod.produto,
+        qt: prod.qt,
+        valor_nf_unit: prod.valor_nf_unit,
+        quantidade_ocorrencia: prod.qt,
+        valor_ocorrencia: prod.valor_nf_unit,
+      }));
+    }
     if (!temEtapaProdutos) return [];
     const modo = configProdutos.modo;
     return produtosSelecionados.map((item) => {
@@ -407,7 +442,8 @@ export default function CheckoutWizard({ token }) {
               <PassoDescricao
                 descricaoExtra={descricaoExtra}
                 setDescricaoExtra={setDescricaoExtra}
-                obrigatoria={!temEtapaProdutos}
+                obrigatoria={descricaoObrigatoria}
+                config={fluxo.descricao}
                 preview={descricaoFinal()}
               />
             )}
@@ -422,6 +458,7 @@ export default function CheckoutWizard({ token }) {
                 setUsandoNovoContato={setUsandoNovoContato}
                 novoContato={novoContato}
                 setNovoContato={setNovoContato}
+                whatsapp={data.whatsapp}
               />
             )}
 
@@ -429,6 +466,7 @@ export default function CheckoutWizard({ token }) {
               <PassoRevisao
                 data={data}
                 assunto={assuntoEfetivo}
+                todosOsProdutos={!!fluxo.todosOsProdutos}
                 steps={steps}
                 config={configProdutos}
                 produtosSelecionados={produtosSelecionados}
@@ -486,6 +524,7 @@ function PassoDados({ data, etiqueta, aviso }) {
         <Row label="Data do pedido" value={data.data_pedido || '-'} />
         <Row label="Valor total" value={formatBRL(data.valor_total)} />
         {data.solicitacao_rca && <Row label="Solicitado pelo RCA" value={String(data.solicitacao_rca)} />}
+        {data.whatsapp && <Row label="Seu WhatsApp" value={formatarFone(data.whatsapp)} />}
       </div>
       {aviso && <div className="alert alert-success">{aviso}</div>}
     </div>
@@ -755,16 +794,17 @@ function PassoCredito({ credito, setCredito }) {
   );
 }
 
-function PassoDescricao({ descricaoExtra, setDescricaoExtra, obrigatoria, preview }) {
+function PassoDescricao({ descricaoExtra, setDescricaoExtra, obrigatoria, config, preview }) {
+  const titulo = config?.titulo || (obrigatoria ? 'Descreva o que aconteceu' : 'Quer adicionar algum detalhe?');
+  const ajuda = config?.ajuda || (obrigatoria
+    ? 'Conte o que houve para a nossa equipe entender o seu caso.'
+    : 'Isso é opcional - já vamos enviar um resumo com os dados que você informou.');
+  const rotulo = config?.rotulo || (obrigatoria ? 'Descrição' : 'Observações (opcional)');
   return (
     <div className="screen">
-      <h1>{obrigatoria ? 'Descreva o que aconteceu' : 'Quer adicionar algum detalhe?'}</h1>
-      <p className="muted">
-        {obrigatoria
-          ? 'Conte o que houve para a nossa equipe entender o seu caso.'
-          : 'Isso é opcional - já vamos enviar um resumo com os dados que você informou.'}
-      </p>
-      <label className="field-label">{obrigatoria ? 'Descrição' : 'Observações (opcional)'}</label>
+      <h1>{titulo}</h1>
+      <p className="muted">{ajuda}</p>
+      <label className="field-label">{rotulo}</label>
       <textarea
         placeholder="Descreva aqui o que aconteceu..."
         value={descricaoExtra}
@@ -780,7 +820,7 @@ function PassoDescricao({ descricaoExtra, setDescricaoExtra, obrigatoria, previe
 
 function PassoContato({
   contatos, garantirContatosCarregados, contatoSelecionado, setContatoSelecionado,
-  usandoNovoContato, setUsandoNovoContato, novoContato, setNovoContato,
+  usandoNovoContato, setUsandoNovoContato, novoContato, setNovoContato, whatsapp,
 }) {
   const [emailBusca, setEmailBusca] = useState('');
   const [emailBuscado, setEmailBuscado] = useState(null);
@@ -862,7 +902,12 @@ function PassoContato({
           className="btn btn-ghost"
           onClick={() => {
             setUsandoNovoContato(true);
-            setNovoContato((prev) => ({ ...prev, email: emailBusca.trim() }));
+            // o celular já vem do WhatsApp de quem está atendendo, dá pra editar se for outro
+            setNovoContato((prev) => ({
+              ...prev,
+              email: emailBusca.trim(),
+              celular: prev.celular || (whatsapp ? foneLocal(whatsapp) : ''),
+            }));
           }}
         >
           Cadastrar novo contato com esse e-mail
@@ -900,13 +945,14 @@ function PassoContato({
 
 function PassoRevisao({
   data, assunto, steps, config, produtosSelecionados, dataRecebimento, credito, anexos,
-  contatos, contatoSelecionado, usandoNovoContato, novoContato, submitError,
+  contatos, contatoSelecionado, usandoNovoContato, novoContato, submitError, todosOsProdutos,
 }) {
   const contatoLabel = usandoNovoContato
     ? `${novoContato.nome_contato} (novo contato)`
     : (contatos.find((c) => c.id === contatoSelecionado)?.nome_contato || '-');
 
-  const temProdutos = produtosSelecionados.length > 0;
+  // na integral, itens marcados antes (se a pessoa passou pela parcial e voltou) não valem
+  const temProdutos = !todosOsProdutos && produtosSelecionados.length > 0;
   const ehQuantidade = config && config.modo === 'quantidade';
 
   return (
@@ -921,6 +967,9 @@ function PassoRevisao({
         )}
         {steps.includes('anexos') && (
           <Row label="Anexos" value={anexos.length ? `${anexos.length} arquivo(s)` : 'nenhum'} />
+        )}
+        {todosOsProdutos && (
+          <Row label="Itens" value={`todos os ${data.produtos.length} da nota`} />
         )}
       </div>
 

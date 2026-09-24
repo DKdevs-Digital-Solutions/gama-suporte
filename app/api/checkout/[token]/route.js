@@ -33,6 +33,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
     assunto: link.id_assunto ? { id: link.id_assunto, descricao: link.assunto_descricao } : null,
     grupo: link.grupo ? resolveGrupo(link.grupo) : null,
     solicitacao_rca: link.solicitacao_rca || null,
+    whatsapp: link.whatsapp || null,
     empresa: pedido.data.cliente_descricao,
     cnpj: pedido.data.cnpj,
     numnota: pedido.data.numnota,
