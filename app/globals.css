@@ -268,3 +268,5 @@ input:focus, textarea:focus { outline: 2px solid var(--primary); outline-offset:
   letter-spacing: 0.03em;
   color: var(--primary);
 }
+
+.btn-arquivo { display: block; text-align: center; flex: 0 0 auto; }

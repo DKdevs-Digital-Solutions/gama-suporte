@@ -6,3 +6,4 @@ data/*.json
 !data/.gitkeep
 *.log
 *.zip
+data/anexos/

@@ -63,6 +63,7 @@ export default function CheckoutWizard({ token }) {
   const [jaConcluido, setJaConcluido] = useState(false);
   const [fecharEmSegundos, setFecharEmSegundos] = useState(30);
   const [assuntoEscolhido, setAssuntoEscolhido] = useState(null);
+  const [anexos, setAnexos] = useState([]);
 
   useEffect(() => {
     let cancelado = false;
@@ -148,6 +149,7 @@ export default function CheckoutWizard({ token }) {
 
   function stepValido(step) {
     if (step === 'assunto') return !!assuntoEscolhido;
+    if (step === 'anexos') return true; // anexar é opcional, igual no fluxo da Blip
     if (step === 'produtos_preco' || step === 'produtos_qt') {
       if (produtosSelecionados.length === 0) return false;
       return produtosSelecionados.every((item) => {
@@ -291,6 +293,7 @@ export default function CheckoutWizard({ token }) {
           produtos: montarProdutos(),
           contatos: [Number(contatoId)],
           id_assunto: assuntoEfetivo ? assuntoEfetivo.id : undefined,
+          anexos: anexos.length ? anexos.map((a) => a.url) : undefined,
         }),
       });
       setResultado(body.chamado);
@@ -393,6 +396,10 @@ export default function CheckoutWizard({ token }) {
               <PassoCredito credito={credito} setCredito={setCredito} />
             )}
 
+            {stepAtual === 'anexos' && (
+              <PassoAnexos token={token} anexos={anexos} setAnexos={setAnexos} />
+            )}
+
             {stepAtual === 'descricao' && (
               <PassoDescricao
                 descricaoExtra={descricaoExtra}
@@ -424,6 +431,7 @@ export default function CheckoutWizard({ token }) {
                 produtosSelecionados={produtosSelecionados}
                 dataRecebimento={dataRecebimento}
                 credito={credito}
+                anexos={anexos}
                 contatos={contatos}
                 contatoSelecionado={contatoSelecionado}
                 usandoNovoContato={usandoNovoContato}
@@ -628,6 +636,84 @@ function PassoData({ valor, setValor }) {
   );
 }
 
+const MAX_ANEXOS = 5; // limite da API
+
+function PassoAnexos({ token, anexos, setAnexos }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  async function handleArquivos(event) {
+    const arquivos = Array.from(event.target.files || []);
+    event.target.value = ''; // permite reenviar o mesmo arquivo depois de remover
+    if (arquivos.length === 0) return;
+
+    setErro(null);
+    setEnviando(true);
+    try {
+      for (const arquivo of arquivos) {
+        if (anexos.length >= MAX_ANEXOS) {
+          setErro(`Você pode enviar no máximo ${MAX_ANEXOS} arquivos.`);
+          break;
+        }
+        const form = new FormData();
+        form.append('arquivo', arquivo);
+        const res = await fetch(`/api/checkout/${token}/anexos`, { method: 'POST', body: form });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.success === false) {
+          setErro(body.mensagem || 'Não foi possível enviar esse arquivo.');
+          break;
+        }
+        // eslint-disable-next-line no-loop-func
+        setAnexos((prev) => (prev.length >= MAX_ANEXOS ? prev : [...prev, { url: body.url, nome: body.nome }]));
+      }
+    } catch {
+      setErro('Não foi possível enviar o arquivo agora.');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="screen">
+      <h1>Quer anexar fotos?</h1>
+      <p className="muted">
+        Envie fotos do produto ou da ocorrência para ajudar na análise. É opcional, e você pode
+        mandar até {MAX_ANEXOS} arquivos (JPG, PNG ou PDF, até 10 MB cada).
+      </p>
+
+      <label className="btn btn-primary btn-arquivo">
+        {enviando ? 'Enviando...' : 'Escolher arquivos'}
+        <input
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          hidden
+          disabled={enviando || anexos.length >= MAX_ANEXOS}
+          onChange={handleArquivos}
+        />
+      </label>
+
+      {erro && <div className="alert alert-danger">{erro}</div>}
+
+      {anexos.map((anexo, i) => (
+        <div className="contact-option" key={anexo.url}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="name">{anexo.nome}</div>
+            <div className="meta">Enviado</div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setAnexos((prev) => prev.filter((_, idx) => idx !== i))}
+          >
+            Remover
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PassoCredito({ credito, setCredito }) {
   return (
     <div className="screen">
@@ -809,7 +895,7 @@ function PassoContato({
 }
 
 function PassoRevisao({
-  data, assunto, steps, config, produtosSelecionados, dataRecebimento, credito,
+  data, assunto, steps, config, produtosSelecionados, dataRecebimento, credito, anexos,
   contatos, contatoSelecionado, usandoNovoContato, novoContato, submitError,
 }) {
   const contatoLabel = usandoNovoContato
@@ -828,6 +914,9 @@ function PassoRevisao({
         <Row label="Contato" value={contatoLabel} />
         {steps.includes('data') && dataRecebimento && (
           <Row label="Recebido em" value={formatarData(dataRecebimento)} />
+        )}
+        {steps.includes('anexos') && (
+          <Row label="Anexos" value={anexos.length ? `${anexos.length} arquivo(s)` : 'nenhum'} />
         )}
       </div>
 

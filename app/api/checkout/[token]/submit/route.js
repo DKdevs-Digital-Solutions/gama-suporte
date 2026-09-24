@@ -3,6 +3,7 @@ import { loadLink, identificacao } from '../../../../../lib/loadLink';
 import { gsync } from '../../../../../lib/gsyncClient';
 import * as linkStore from '../../../../../lib/linkStore';
 import { assuntoPermitidoNoGrupo } from '../../../../../lib/assuntos';
+import { LIMITE_ANEXOS } from '../../../../../lib/anexoStore';
 import { withErrorHandling } from '../../../../../lib/apiHandler';
 
 // POST /api/checkout/:token/submit - abre o chamado de verdade. Idempotente: se o link já
@@ -16,13 +17,19 @@ export const POST = withErrorHandling(async (request, { params }) => {
     return NextResponse.json({ success: true, jaConcluido: true, chamado: jaUsado.chamado });
   }
 
-  const { descricao_chamado, produtos, contatos, id_assunto } = await request.json().catch(() => ({}));
+  const { descricao_chamado, produtos, contatos, id_assunto, anexos } = await request.json().catch(() => ({}));
 
   if (!descricao_chamado || !String(descricao_chamado).trim()) {
     return NextResponse.json({ mensagem: 'Descreva o problema antes de enviar.' }, { status: 422 });
   }
   if (!Array.isArray(contatos) || contatos.length < 1 || contatos.length > 3) {
     return NextResponse.json({ mensagem: 'Selecione de 1 a 3 contatos.' }, { status: 422 });
+  }
+  if (anexos !== undefined && (!Array.isArray(anexos) || anexos.length > LIMITE_ANEXOS)) {
+    return NextResponse.json(
+      { mensagem: `É possível anexar no máximo ${LIMITE_ANEXOS} arquivos.` },
+      { status: 422 },
+    );
   }
 
   // Link com grupo: o assunto vem da escolha feita no checkout, mas só pode ser um dos
@@ -42,6 +49,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
     contatos,
     origem: 'BLIP',
     produtos: Array.isArray(produtos) && produtos.length ? produtos : undefined,
+    anexos: Array.isArray(anexos) && anexos.length ? anexos : undefined,
   });
 
   await linkStore.markUsed(token, chamado);
