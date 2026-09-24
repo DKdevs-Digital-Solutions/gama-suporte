@@ -18,6 +18,20 @@ Preencha o `.env` (veja `.env.example`):
 - `INTERNAL_API_KEY` - chave que autoriza gerar links novos (`POST /api/links`).
 - `PUBLIC_BASE_URL` - domínio público usado para montar a URL final do link.
 
+## Deploy (Cloudflare Workers)
+
+A config do worker está versionada em `wrangler.jsonc`. No painel do Cloudflare (Workers & Pages →
+gama-suporte → Settings → Build):
+
+- **Build command:** `npx opennextjs-cloudflare build` (o `npm run build` sozinho só roda o Next e o
+  deploy falha com "Could not find compiled Open Next config")
+- **Deploy command:** `npx wrangler deploy`
+
+Precisa existir o bucket R2 `gama-suporte-anexos`. `GSYNC_BASE_URL` e `PUBLIC_BASE_URL` vêm do
+`wrangler.jsonc`; as credenciais são **secrets** criados no painel (`GSYNC_LOGIN`, `GSYNC_PASSWORD`,
+`LINK_SECRET`, `INTERNAL_API_KEY`). Não use variáveis de texto para elas: cada deploy apaga as
+variáveis de texto que não estão no `wrangler.jsonc`, e o repositório é público.
+
 ## Gerando um link de teste
 
 ```bash
