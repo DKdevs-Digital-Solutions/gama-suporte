@@ -12,7 +12,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
   const { token } = await params;
   const link = loadLink(token);
 
-  const jaUsado = linkStore.getUsage(token);
+  const jaUsado = await linkStore.getUsage(token);
   if (jaUsado) {
     return NextResponse.json({ success: true, jaConcluido: true, chamado: jaUsado.chamado });
   }
@@ -53,7 +53,13 @@ export const POST = withErrorHandling(async (request, { params }) => {
     solicitacao_rca: link.solicitacao_rca || undefined,
   });
 
-  await linkStore.markUsed(token, chamado);
+  // A partir daqui o chamado já existe no Gsync: responder erro faria o cliente tentar de novo e
+  // abrir um segundo. Se a gravação falhar, registra no log e segue com o sucesso.
+  try {
+    await linkStore.markUsed(token, chamado);
+  } catch (err) {
+    console.error('Chamado aberto, mas não foi possível marcar o link como usado:', chamado?.id, err);
+  }
 
   return NextResponse.json({ success: true, jaConcluido: false, chamado });
 });

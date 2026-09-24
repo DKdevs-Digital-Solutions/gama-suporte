@@ -10,7 +10,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
   const { token } = await params;
   const link = loadLink(token);
 
-  const jaUsado = linkStore.getUsage(token);
+  const jaUsado = await linkStore.getUsage(token);
   if (jaUsado) {
     return NextResponse.json({
       success: true,

@@ -97,7 +97,7 @@ ou alterar os dados sem o `LINK_SECRET`. A expiração (`exp`) é conferida a ca
 (`lib/loadLink.js`) antes de qualquer request à API do Gama/GSync.
 
 Cada link só pode abrir **um** chamado: depois do primeiro `POST /submit` bem-sucedido, o token
-fica marcado como usado (`lib/linkStore.js`, arquivo `data/used-links.json`) e qualquer nova
+fica marcado como usado (`lib/linkStore.js`, no R2 em `links-usados/`; local, em `data/used-links.json`) e qualquer nova
 tentativa (reload, double-tap) devolve o mesmo chamado já criado em vez de duplicar.
 
 ## Fluxo do checkout (5 etapas, com timeline)
