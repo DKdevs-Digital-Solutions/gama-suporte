@@ -1,0 +1,35 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "gama-suporte",
+	"compatibility_date": "2026-09-24",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			// Self-reference service binding, the service name must match the worker name
+			// see https://opennext.js.org/cloudflare/caching
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "gama-suporte"
+		}
+	],
+	"images": {
+		// Enable image optimization
+		// see https://opennext.js.org/cloudflare/howtos/image
+		"binding": "IMAGES"
+	},
+	"r2_buckets": [
+		{
+			// Fotos/PDFs enviados no checkout. A API do Gsync só aceita anexo por URL,
+			// então o arquivo fica aqui e é servido em /api/anexos/:id (lib/anexoStore.js).
+			"binding": "ANEXOS_BUCKET",
+			"bucket_name": "gama-suporte-anexos"
+		}
+	]
+}

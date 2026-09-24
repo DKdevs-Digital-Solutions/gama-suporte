@@ -4,17 +4,25 @@
   "description": "Checkout mobile para abertura de chamados CS (Gama/GSync) via link enviado pelo Blip",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
+    "dev": "next dev",
     "start": "next start",
-    "gerar-link": "node scripts/gerar-link.js"
+    "gerar-link": "node scripts/gerar-link.js",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.6",
     "next": "^15.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "wrangler": "^4.138.0"
   }
 }
