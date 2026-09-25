@@ -3,9 +3,7 @@ import { loadLink, identificacao } from '../../../../../lib/loadLink';
 import { gsync } from '../../../../../lib/gsyncClient';
 import * as linkStore from '../../../../../lib/linkStore';
 import { assuntoPermitidoNoGrupo } from '../../../../../lib/assuntos';
-import { LIMITE_ANEXOS } from '../../../../../lib/anexoStore';
-import { garantirContatoWhatsapp } from '../../../../../lib/contatoWhatsapp';
-import { withErrorHandling } from '../../../../../lib/apiHandler';
+import { LIMITE_ANEXOS } from '../../../../../lib/anexoStore';import { withErrorHandling } from '../../../../../lib/apiHandler';
 
 // POST /api/checkout/:token/submit - abre o chamado de verdade. Idempotente: se o link já
 // tiver sido usado, devolve o chamado já criado em vez de abrir um segundo.
@@ -43,26 +41,11 @@ export const POST = withErrorHandling(async (request, { params }) => {
     idAssunto = Number(id_assunto);
   }
 
-  // O número de WhatsApp do atendimento vai como contato PRINCIPAL do chamado (o primeiro da lista
-  // vira o id_contato no Gsync), para quem atende ver na hora o número que chamou. Se não der para
-  // cadastrar, o chamado sai mesmo assim - o número também está no texto do chamado.
-  let idsContatos = contatos.map(Number);
-  if (link.whatsapp) {
-    try {
-      const idWhatsapp = await garantirContatoWhatsapp(link, idsContatos[0]);
-      if (idWhatsapp) {
-        idsContatos = [idWhatsapp, ...idsContatos.filter((id) => id !== idWhatsapp)].slice(0, 3);
-      }
-    } catch (err) {
-      console.error('Não foi possível vincular o contato do WhatsApp:', err);
-    }
-  }
-
   const chamado = await gsync.abrirChamado({
     ...identificacao(link),
     id_assunto: idAssunto,
     descricao_chamado,
-    contatos: idsContatos,
+    contatos: contatos.map(Number),
     origem: 'BLIP',
     produtos: Array.isArray(produtos) && produtos.length ? produtos : undefined,
     anexos: Array.isArray(anexos) && anexos.length ? anexos : undefined,
