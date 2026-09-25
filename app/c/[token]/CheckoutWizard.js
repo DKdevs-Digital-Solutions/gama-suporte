@@ -194,6 +194,12 @@ export default function CheckoutWizard({ token }) {
     const doc = data.numnota || data.numped;
     const linhas = [];
 
+    // primeira linha: o número de WhatsApp de onde veio este atendimento, para quem atende ver
+    // logo de cara (a API não tem campo de telefone no chamado)
+    if (data.whatsapp) {
+      linhas.push(`WhatsApp deste atendimento: ${formatarTelefone(data.whatsapp)}`, '');
+    }
+
     if (steps.includes('produtos_preco')) {
       linhas.push(`Cliente relata divergência de preço nos itens da nota ${doc}:`);
       produtosSelecionados.forEach((item) => {
@@ -221,11 +227,6 @@ export default function CheckoutWizard({ token }) {
       linhas.push(`Nota fiscal de origem: ${credito.nfOrigem}.`);
       linhas.push(`Nota fiscal de devolução: ${credito.nfDevolucao}.`);
       linhas.push(`Valor do crédito consultado: ${formatBRL(paraNumero(credito.valor))}.`);
-    }
-
-    // a API não tem campo de telefone: o número de quem abriu pelo WhatsApp vai no texto
-    if (data.whatsapp) {
-      linhas.push(`Contato via WhatsApp: ${formatarTelefone(data.whatsapp)}.`);
     }
 
     let texto = linhas.join('\n');
@@ -948,6 +949,7 @@ function PassoRevisao({
       <div className="card">
         <Row label="Empresa" value={data.empresa} />
         <Row label="Assunto" value={assunto ? assunto.descricao : '-'} />
+        {data.whatsapp && <Row label="WhatsApp" value={formatarTelefone(data.whatsapp)} />}
         <Row label="Contato" value={contatoLabel} />
         {steps.includes('data') && dataRecebimento && (
           <Row label="Recebido em" value={formatarData(dataRecebimento)} />

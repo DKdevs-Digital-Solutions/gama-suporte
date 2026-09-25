@@ -43,14 +43,15 @@ export const POST = withErrorHandling(async (request, { params }) => {
     idAssunto = Number(id_assunto);
   }
 
-  // O número de WhatsApp do link vai para o chamado como contato vinculado. Se não der para
+  // O número de WhatsApp do atendimento vai como contato PRINCIPAL do chamado (o primeiro da lista
+  // vira o id_contato no Gsync), para quem atende ver na hora o número que chamou. Se não der para
   // cadastrar, o chamado sai mesmo assim - o número também está no texto do chamado.
-  const idsContatos = contatos.map(Number);
+  let idsContatos = contatos.map(Number);
   if (link.whatsapp) {
     try {
       const idWhatsapp = await garantirContatoWhatsapp(link, idsContatos[0]);
-      if (idWhatsapp && !idsContatos.includes(idWhatsapp) && idsContatos.length < 3) {
-        idsContatos.push(idWhatsapp);
+      if (idWhatsapp) {
+        idsContatos = [idWhatsapp, ...idsContatos.filter((id) => id !== idWhatsapp)].slice(0, 3);
       }
     } catch (err) {
       console.error('Não foi possível vincular o contato do WhatsApp:', err);
