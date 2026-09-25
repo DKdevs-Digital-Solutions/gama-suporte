@@ -4,6 +4,7 @@ import { gsync } from '../../../../../lib/gsyncClient';
 import * as linkStore from '../../../../../lib/linkStore';
 import { assuntoPermitidoNoGrupo } from '../../../../../lib/assuntos';
 import { LIMITE_ANEXOS } from '../../../../../lib/anexoStore';
+import { garantirContatoWhatsapp } from '../../../../../lib/contatoWhatsapp';
 import { withErrorHandling } from '../../../../../lib/apiHandler';
 
 // POST /api/checkout/:token/submit - abre o chamado de verdade. Idempotente: se o link já
@@ -42,11 +43,25 @@ export const POST = withErrorHandling(async (request, { params }) => {
     idAssunto = Number(id_assunto);
   }
 
+  // O número de WhatsApp do link vai para o chamado como contato vinculado. Se não der para
+  // cadastrar, o chamado sai mesmo assim - o número também está no texto do chamado.
+  const idsContatos = contatos.map(Number);
+  if (link.whatsapp) {
+    try {
+      const idWhatsapp = await garantirContatoWhatsapp(link, idsContatos[0]);
+      if (idWhatsapp && !idsContatos.includes(idWhatsapp) && idsContatos.length < 3) {
+        idsContatos.push(idWhatsapp);
+      }
+    } catch (err) {
+      console.error('Não foi possível vincular o contato do WhatsApp:', err);
+    }
+  }
+
   const chamado = await gsync.abrirChamado({
     ...identificacao(link),
     id_assunto: idAssunto,
     descricao_chamado,
-    contatos,
+    contatos: idsContatos,
     origem: 'BLIP',
     produtos: Array.isArray(produtos) && produtos.length ? produtos : undefined,
     anexos: Array.isArray(anexos) && anexos.length ? anexos : undefined,

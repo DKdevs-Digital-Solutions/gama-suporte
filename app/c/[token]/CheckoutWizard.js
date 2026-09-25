@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getFluxo, rotuloEtapa } from '../../../lib/fluxosAssunto';
+import { telefoneBR, formatarTelefone } from '../../../lib/telefone';
 
 function formatBRL(value) {
   const n = Number(value);
@@ -15,20 +16,6 @@ function onlyDigits(str) {
 
 function isValidEmail(str) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(str || '').trim());
-}
-
-/** Número sem o 55 do Brasil, no formato que a API espera no celular do contato (DDD + número). */
-function foneLocal(digitos) {
-  const d = onlyDigits(digitos);
-  return (d.length === 12 || d.length === 13) && d.startsWith('55') ? d.slice(2) : d;
-}
-
-/** (31) 99999-9999 */
-function formatarFone(digitos) {
-  const d = foneLocal(digitos);
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `+${onlyDigits(digitos)}`;
 }
 
 function paraNumero(valor) {
@@ -238,7 +225,7 @@ export default function CheckoutWizard({ token }) {
 
     // a API não tem campo de telefone: o número de quem abriu pelo WhatsApp vai no texto
     if (data.whatsapp) {
-      linhas.push(`Contato via WhatsApp: ${formatarFone(data.whatsapp)}.`);
+      linhas.push(`Contato via WhatsApp: ${formatarTelefone(data.whatsapp)}.`);
     }
 
     let texto = linhas.join('\n');
@@ -524,7 +511,7 @@ function PassoDados({ data, etiqueta, aviso }) {
         <Row label="Data do pedido" value={data.data_pedido || '-'} />
         <Row label="Valor total" value={formatBRL(data.valor_total)} />
         {data.solicitacao_rca && <Row label="Solicitado pelo RCA" value={String(data.solicitacao_rca)} />}
-        {data.whatsapp && <Row label="Seu WhatsApp" value={formatarFone(data.whatsapp)} />}
+        {data.whatsapp && <Row label="Seu WhatsApp" value={formatarTelefone(data.whatsapp)} />}
       </div>
       {aviso && <div className="alert alert-success">{aviso}</div>}
     </div>
@@ -906,7 +893,7 @@ function PassoContato({
             setNovoContato((prev) => ({
               ...prev,
               email: emailBusca.trim(),
-              celular: prev.celular || (whatsapp ? foneLocal(whatsapp) : ''),
+              celular: prev.celular || (whatsapp ? telefoneBR(whatsapp) : ''),
             }));
           }}
         >
