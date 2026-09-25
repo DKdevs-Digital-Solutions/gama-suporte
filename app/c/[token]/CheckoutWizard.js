@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getFluxo, rotuloEtapa } from '../../../lib/fluxosAssunto';
-import { telefoneBR, formatarTelefone } from '../../../lib/telefone';
+import { formatarTelefone } from '../../../lib/telefone';
 
 function formatBRL(value) {
   const n = Number(value);
@@ -446,7 +446,6 @@ export default function CheckoutWizard({ token }) {
                 setUsandoNovoContato={setUsandoNovoContato}
                 novoContato={novoContato}
                 setNovoContato={setNovoContato}
-                whatsapp={data.whatsapp}
               />
             )}
 
@@ -512,7 +511,6 @@ function PassoDados({ data, etiqueta, aviso }) {
         <Row label="Data do pedido" value={data.data_pedido || '-'} />
         <Row label="Valor total" value={formatBRL(data.valor_total)} />
         {data.solicitacao_rca && <Row label="Solicitado pelo RCA" value={String(data.solicitacao_rca)} />}
-        {data.whatsapp && <Row label="Seu WhatsApp" value={formatarTelefone(data.whatsapp)} />}
       </div>
       {aviso && <div className="alert alert-success">{aviso}</div>}
     </div>
@@ -808,7 +806,7 @@ function PassoDescricao({ descricaoExtra, setDescricaoExtra, obrigatoria, config
 
 function PassoContato({
   contatos, garantirContatosCarregados, contatoSelecionado, setContatoSelecionado,
-  usandoNovoContato, setUsandoNovoContato, novoContato, setNovoContato, whatsapp,
+  usandoNovoContato, setUsandoNovoContato, novoContato, setNovoContato,
 }) {
   const [emailBusca, setEmailBusca] = useState('');
   const [emailBuscado, setEmailBuscado] = useState(null);
@@ -890,12 +888,7 @@ function PassoContato({
           className="btn btn-ghost"
           onClick={() => {
             setUsandoNovoContato(true);
-            // o celular já vem do WhatsApp de quem está atendendo, dá pra editar se for outro
-            setNovoContato((prev) => ({
-              ...prev,
-              email: emailBusca.trim(),
-              celular: prev.celular || (whatsapp ? telefoneBR(whatsapp) : ''),
-            }));
+            setNovoContato((prev) => ({ ...prev, email: emailBusca.trim() }));
           }}
         >
           Cadastrar novo contato com esse e-mail
@@ -949,7 +942,6 @@ function PassoRevisao({
       <div className="card">
         <Row label="Empresa" value={data.empresa} />
         <Row label="Assunto" value={assunto ? assunto.descricao : '-'} />
-        {data.whatsapp && <Row label="WhatsApp" value={formatarTelefone(data.whatsapp)} />}
         <Row label="Contato" value={contatoLabel} />
         {steps.includes('data') && dataRecebimento && (
           <Row label="Recebido em" value={formatarData(dataRecebimento)} />
